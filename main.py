@@ -2,6 +2,7 @@ from state.environment import EnvironmentState
 from state.drone import DroneState
 from ui.visualizer import Visualizer, show_start_screen
 from optimization.genetic_algo import GeneticOptimizer
+from monitoring.evaluator import MissionMonitor, export_report_json
 
 def run_simulation():
     GRID_WIDTH = 60
@@ -23,8 +24,12 @@ def run_scenario(grid_width: int, grid_height: int, cell_size: int):
     # --- PILLAR 3: RUN OPTIMIZATION ---
     optimizer = GeneticOptimizer(population_size=50)
     optimized_weights = optimizer.run_evolution(generations=100)
-    
-    ui = Visualizer(env_width=grid_width, env_height=grid_height, cell_size=cell_size)
+
+    # --- PILLAR 4: MONITORING & EVALUATION ---
+    monitor = MissionMonitor(env, drone, optimized_weights)
+
+    ui = Visualizer(env_width=grid_width, env_height=grid_height, cell_size=cell_size,
+                    monitor=monitor)
     print("Starting Project Aegis: Simulation...")
 
     changed_cells = drone.sense_environment(env)
@@ -38,6 +43,13 @@ def run_scenario(grid_width: int, grid_height: int, cell_size: int):
 
         if nearest_path:
             next_x, next_y = nearest_path[0]
+
+            # Capture decision utility BEFORE the move
+            decision_utility = drone.calculate_expected_utility(
+                next_x, next_y, env, optimized_weights
+            )
+            monitor.record_step(next_x, next_y, decision_utility)
+
             ui.animate_move(env, drone, next_x, next_y)
             if ui.return_to_menu:
                 break
@@ -50,12 +62,18 @@ def run_scenario(grid_width: int, grid_height: int, cell_size: int):
 
     if ui.return_to_menu:
         print("Returning to start screen.")
+        report = monitor.evaluate()
+        export_report_json(report)
         return
 
     print("Simulation Ended.")
     print("Recent logic proof trace:")
     for proof_step in drone.kb.explain_recent_inferences():
         print(f"- {proof_step}")
+
+    # --- PILLAR 4: Final mathematical evaluation ---
+    report = monitor.evaluate()
+    export_report_json(report)
 
 if __name__ == "__main__":
     run_simulation()
